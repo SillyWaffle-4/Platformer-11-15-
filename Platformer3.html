@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Aiden's Nightmare: Refined Singularity</title>
+    <style>
+        body { 
+            display: flex; flex-direction: column; align-items: center; 
+            background-color: #030305; color: #00f2ff; 
+            font-family: 'Courier New', monospace; margin: 0; padding: 20px; overflow: hidden; 
+        }
+        canvas { 
+            border: 3px solid #00f2ff; box-shadow: 0 0 25px rgba(0, 242, 255, 0.4); 
+            background: #000; display: none; 
+        }
+        @keyframes rainbowBorder {
+            0% { border-color: #ff0000; box-shadow: 0 0 25px #ff0000; }
+            20% { border-color: #fbff00; box-shadow: 0 0 25px #fbff00; }
+            40% { border-color: #00ff22; box-shadow: 0 0 25px #00ff22; }
+            60% { border-color: #00f2ff; box-shadow: 0 0 25px #00f2ff; }
+            80% { border-color: #bc00ff; box-shadow: 0 0 25px #bc00ff; }
+            100% { border-color: #ff0000; box-shadow: 0 0 25px #ff0000; }
+        }
+        .rainbow-canvas { animation: rainbowBorder 3s infinite linear; }
+        .stats { margin-top: 15px; font-size: 18px; display: none; gap: 40px; text-transform: uppercase; font-weight: bold; }
+        #menu, #winOverlay { 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.95); border: 4px double #00f2ff; padding: 40px; text-align: center; z-index: 100;
+        }
+        #winOverlay { border-color: #ff0055; display: none; }
+        .level-btn {
+            background: transparent; border: 1px solid #00f2ff; color: #00f2ff;
+            padding: 10px 20px; margin: 10px; cursor: pointer; font-family: 'Courier New';
+            font-size: 16px; transition: 0.3s;
+        }
+        .level-btn:hover { background: #00f2ff; color: #000; box-shadow: 0 0 15px #00f2ff; }
+        .warning-text { color: #ff0055; height: 25px; font-size: 20px; margin-bottom: 5px; text-shadow: 0 0 10px #ff0055; }
+        .highlight { color: #fff; text-shadow: 0 0 5px #00f2ff; }
+    </style>
+</head>
+<body>
+    <h1 id="levelTitle">AIDEN'S NIGHTMARE</h1>
+
+    <div id="menu">
+        <h2>SELECT SECTOR</h2>
+        <div id="levelButtons">
+            <button class="level-btn" onclick="startGame(1)">SEC_01: GARDEN</button>
+            <button class="level-btn" onclick="startGame(2)">SEC_02: ABYSS</button>
+            <button class="level-btn" onclick="startGame(3)">SEC_03: METAL</button>
+            <button class="level-btn" onclick="startGame(4)">SEC_04: CLOUD</button>
+            <button class="level-btn" onclick="startGame(5)">SEC_05: SINGULARITY</button>
+        </div>
+    </div>
+
+    <div class="warning-text" id="glitchWarning"></div>
+    <div class="stats" id="statsBar">
+        <span>TIME: <b id="timerStat" class="highlight">0.00</b>s</span>
+        <span>DEATHS: <b id="deathStat" class="highlight">0</b></span>
+        <span>MODE: <b id="modeStat" class="highlight">PLATFORMER</b></span>
+    </div>
+
+    <div id="winOverlay">
+        <h1 id="winStatus" style="color:#ff0055">SINGULARITY STABILIZED</h1>
+        <p id="winMessage"></p>
+        <button onclick="location.reload()" style="padding: 15px 30px; cursor: pointer; background: #00f2ff; border: none; font-weight: bold;">REBOOT REALITY</button>
+    </div>
+
+    <canvas id="gameCanvas" width="900" height="450"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let currentLevel = 1;
+        let worldX = 0;
+        let deaths = 0;
+        let gameActive = false;
+        let startTime = 0;
+        let frame = 0;
+
+        let pY = 250, vY = 0;
+        let isGrounded = false;
+        let coyoteTime = 0; 
+        let jumpBuffer = 0; 
+        const pSize = 30;
+        let waveTrail = [];
+
+        const cfg = {
+            1: { name: "OUT OF MEMORY", grav: 0.85, jump: -18.2, speed: 8, wave: false, inv: false },
+            2: { name: "STORAGE FAILURE", grav: 1.0, jump: -19.6, speed: 10.2, wave: false, inv: true },
+            3: { name: "TEN GIGABYTES", grav: 1.3, jump: -21, speed: 9, wave: false, inv: false },
+            4: { name: "FLOATING TRAIL", grav: 0.6, jump: -8, speed: 8, wave: true, inv: false },
+            5: { name: "SINGULARITY 2", grav: 1.1, jump: -19.5, speed: 11.1, wave: false, inv: true }
+        };
+
+        const levels = {
+            1: [ {x:0, y:350, w:450, h:100}, {x:550, y:280, w:100, h:20, s:true}, {x:750, y:200, w:100, h:20}, {x:950, y:320, w:120, h:20, s:true}, {x:1200, y:190, w:10, h:10}, {x:1570, y:350, w:450, h:100} ],
+            2: [ {x:0, y:380, w:250, h:70}, {x:500, y:280, w:80, h:20, s:true}, {x:635, y:200, w:80, h:20, v:60}, {x:950, y:390, w:80, h:20, s:true}, {x:1250, y:380, w:500, h:100} ],
+            3: [ {x:0, y:400, w:200, h:50}, {x:300, y:320, w:60, h:20, s:true}, {x:400, y:290, w:10, h:10}, {x:550, y:240, w:60, h:20, s:true}, {x:800, y:370, w:60, h:20, v:100}, {x:1200, y:277, w:15, h:10},{x:1400, y:380, w:500, h:100} ],
+            4: [ {x:0, y:150, w:250, h:150}, {x:400, y:0, w:1400, h:100, dmg:true}, {x:400, y:350, w:1400, h:100, dmg:true}, {x:750, y:180, w:80, h:80, s:true}, {x:1100, y:220, w:80, h:80, s:true}, {x:1450, y:150, w:80, h:80, s:true}, {x:1800, y:0, w:250, h:450} ],
+            5: [ 
+                {x:0, y:380, w:300, h:70}, 
+                {x:450, y:300, w:100, h:20, s:true}, 
+                {x:693, y:200, w:120, h:20, v:100},   
+                {x:1000, y:340, w:120, h:20, s:true}, 
+                {x:1300, y:250, w:80, h:20, v:100},
+                {x:1550, y:150, w:80, h:20}, 
+                {x:1800, y:300, w:120, h:20, s:true},
+                {x:2130, y:200, w:10, h:10, v:67},
+                {x:2400, y:350, w:600, h:100} 
+            ]
+        };
+
+        function startGame(level) {
+            currentLevel = level;
+            document.getElementById('menu').style.display = 'none';
+            canvas.style.display = 'block';
+            document.getElementById('statsBar').style.display = 'flex';
+            document.getElementById('levelTitle').innerText = "LEVEL " + currentLevel + ": " + cfg[currentLevel].name;
+            if (level === 5) canvas.classList.add('rainbow-canvas');
+            else canvas.classList.remove('rainbow-canvas');
+            gameActive = true;
+            if(startTime === 0) startTime = Date.now();
+            reset(true);
+            loop();
+        }
+
+        const keys = {};
+        window.onkeydown = (e) => {
+            const k = e.key.toLowerCase();
+            keys[k] = true;
+            if ([' ', 'w', 'arrowup'].includes(k)) jumpBuffer = 10;
+        };
+        window.onkeyup = (e) => keys[e.key.toLowerCase()] = false;
+
+        function reset(hardReset = false) {
+            if (!hardReset) deaths++;
+            worldX = 0; pY = 200; vY = 0; coyoteTime = 0; jumpBuffer = 0;
+            waveTrail = [];
+        }
+
+        function update() {
+            if (!gameActive) return;
+            frame++;
+            const l = cfg[currentLevel];
+            
+            let dir = 0;
+            
+            // ADJUSTED FLIP LOGIC: 
+            // Cycle is now 420 frames (7 seconds). 
+            // Glitch happens for only 90 frames (1.5 seconds) within that 7s cycle.
+            const flipCycle = 420; 
+            const flipDuration = 90;
+            const isInv = l.inv && (frame % flipCycle < flipDuration);
+            
+            document.getElementById('glitchWarning').innerText = isInv ? "!!! SYSTEM ERROR: CONTROLS FLIPPED !!!" : "";
+            
+            if (keys['a'] || keys['arrowleft']) dir = isInv ? 1 : -1;
+            if (keys['d'] || keys['arrowright']) dir = isInv ? -1 : 1;
+            
+            worldX += dir * l.speed;
+            if (worldX < 0) worldX = 0;
+
+            if (l.wave) {
+                document.getElementById('modeStat').innerText = "WAVE";
+                if (keys[' '] || keys['w'] || keys['arrowup']) vY -= 1.3;
+                else vY += 1.3;
+                vY *= 0.91;
+                pY += vY;
+            } else {
+                document.getElementById('modeStat').innerText = "PLATFORMER";
+                if (jumpBuffer > 0 && (isGrounded || coyoteTime > 0)) {
+                    vY = l.jump;
+                    isGrounded = false; coyoteTime = 0; jumpBuffer = 0;
+                }
+                vY += l.grav;
+                pY += vY;
+            }
+
+            isGrounded = false;
+            if (coyoteTime > 0) coyoteTime--;
+            if (jumpBuffer > 0) jumpBuffer--;
+
+            levels[currentLevel].forEach(o => {
+                let oX = o.x - worldX;
+                let oY = o.y + (o.v ? Math.sin(frame/20) * o.v : 0);
+                if (150 + pSize > oX && 150 < oX + o.w) {
+                    if (pY + pSize > oY && pY < oY + o.h) {
+                        if (o.dmg) reset();
+                        if (o.s && pY + pSize > oY - 12 && pY < oY) reset();
+                        if (!l.wave && vY >= 0 && pY + pSize < oY + 25) {
+                            pY = oY - pSize; vY = 0; isGrounded = true; coyoteTime = 12;
+                        }
+                    }
+                }
+            });
+
+            if (pY > canvas.height || pY < -100) reset();
+
+            const goalX = (currentLevel === 5) ? 2800 : 1600;
+            if (worldX + 150 + pSize >= goalX) {
+                if (currentLevel < 5) {
+                    currentLevel++;
+                    if (currentLevel === 5) canvas.classList.add('rainbow-canvas');
+                    reset(true);
+                    document.getElementById('levelTitle').innerText = "LEVEL " + currentLevel + ": " + cfg[currentLevel].name;
+                } else {
+                    gameActive = false;
+                    document.getElementById('winOverlay').style.display = "block";
+                    document.getElementById('winStatus').innerText = "SINGULARITY BREACHED";
+                    document.getElementById('winMessage').innerText = `TOTAL DEATHS: ${deaths} | FINAL TIME: ${document.getElementById('timerStat').innerText}s`;
+                }
+            }
+
+            document.getElementById('timerStat').innerText = ((Date.now() - startTime) / 1000).toFixed(2);
+            document.getElementById('deathStat').innerText = deaths;
+        }
+
+        function draw() {
+            ctx.fillStyle = "#000";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = "rgba(0, 242, 255, 0.1)";
+            for(let i = - (worldX % 50); i < canvas.width; i += 50) {
+                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+            }
+
+            levels[currentLevel].forEach(o => {
+                let oX = o.x - worldX;
+                let oY = o.y + (o.v ? Math.sin(frame/20) * o.v : 0);
+                ctx.fillStyle = o.dmg ? "#400" : "#111";
+                ctx.strokeStyle = o.dmg ? "#ff0055" : "#00f2ff";
+                ctx.lineWidth = 2;
+                ctx.strokeRect(oX, oY, o.w, o.h);
+                ctx.fillRect(oX, oY, o.w, o.h);
+                if (o.s) { 
+                    ctx.fillStyle = "#ff0055";
+                    ctx.beginPath(); ctx.moveTo(oX, oY); ctx.lineTo(oX + o.w/2, oY - 20); ctx.lineTo(oX + o.w, oY); ctx.fill();
+                }
+            });
+
+            let drawGoalX = ((currentLevel === 5) ? 2800 : 1600) - worldX;
+            ctx.fillStyle = "#fff"; ctx.shadowBlur = 20; ctx.shadowColor = "#00f2ff";
+            ctx.fillRect(drawGoalX, 0, 20, canvas.height);
+            ctx.shadowBlur = 0;
+
+            if (currentLevel === 5) {
+                let hue = frame * 5 % 360;
+                ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`;
+                ctx.lineWidth = 4;
+                ctx.strokeRect(148, pY - 2, pSize + 4, pSize + 4);
+            }
+            
+            ctx.fillStyle = "#fff";
+            ctx.shadowBlur = 10; ctx.shadowColor = "#00f2ff";
+            ctx.fillRect(150, pY, pSize, pSize);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = "#000"; ctx.fillRect(170, pY + 8, 6, 6);
+        }
+
+        function loop() {
+            if (!gameActive) return;
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+    </script>
+</body>
+</html>
